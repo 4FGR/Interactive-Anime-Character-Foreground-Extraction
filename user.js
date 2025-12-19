@@ -164,7 +164,7 @@
             <div style="width:1px; height:20px; background:#555;"></div>
             <button id="btn-undo" style="${btnStyle} background:#57606f; color:white;">↩️ 撤销</button>
             <button id="btn-run" style="${btnStyle} background:#3742fa; color:white;">▶️ 生成结果</button>
-            <button id="btn-close" style="${btnStyle} background:#ff4757; color:white;">❌ 关闭</button>
+            <button id="btn-close" style="${btnStyle} background:#ff4757; color:white;">关闭</button>
         `;
 
         editorUI.appendChild(toolbar);
@@ -257,7 +257,7 @@
         btnRun.onclick = async () => {
             if (!currentImgBlob) return;
             const originalText = btnRun.innerText;
-            btnRun.innerText = '⏳ 智能计算中...'; btnRun.disabled = true; btnRun.style.opacity = '0.7';
+            btnRun.innerText = '⏳ 计算中...'; btnRun.disabled = true; btnRun.style.opacity = '0.7';
 
             // 构建参数
             const options = {
