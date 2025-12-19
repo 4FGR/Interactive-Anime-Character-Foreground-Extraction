@@ -18,7 +18,7 @@ class AdvancedGrabCutProcessor:
         return cv2.merge([b, g, r, alpha])
 
     # 专门用于保留动漫勾线的处理函数
-    def _preserve_anime_outlines(self, mask_uint8):
+    def preserve_anime_outlines(self, mask_uint8):
         # 膨胀：找回被 GrabCut 切掉的黑色描边
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
         mask_dilated = cv2.dilate(mask_uint8, kernel, iterations=1)
@@ -103,8 +103,7 @@ class AdvancedGrabCutProcessor:
         # 提取结果
         mask_result = np.where((mask == 2) | (mask == 0), 0, 255).astype('uint8')
 
-        # 🔥 [修改处] 返回 Alpha (不再直接除以255，而是调用优化函数)
-        # 原代码: alpha_channel = (mask_result.astype(np.float32) / 255.0)
-        alpha_channel = self._preserve_anime_outlines(mask_result)
+        # 返回 Alpha (不再直接除以255，而是调用优化函数)
+        alpha_channel = self.preserve_anime_outlines(mask_result)
         
         return alpha_channel
