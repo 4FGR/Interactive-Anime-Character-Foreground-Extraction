@@ -12,31 +12,34 @@ class AdvancedGrabCutProcessor:
             else:
                 raise ValueError("Input error")
 
-    def _create_checkerboard_pattern(self, h, w, grid_size=20):
-        """生成透明格子背景"""
-        color1 = (240, 240, 240)
-        color2 = (200, 200, 200)
-        pattern = np.full((h, w, 3), color1, dtype=np.uint8)
-        for y in range(0, h, grid_size):
-            for x in range(0, w, grid_size):
-                if (y // grid_size + x // grid_size) % 2 == 1:
-                    y_end = min(y + grid_size, h)
-                    x_end = min(x + grid_size, w)
-                    pattern[y:y_end, x:x_end] = color2
-        return pattern
-
     def _convert_to_rgba(self, img_bgr):
         b, g, r = cv2.split(img_bgr)
         alpha = np.ones(b.shape, dtype=np.uint8) * 255
         return cv2.merge([b, g, r, alpha])
 
+    # 专门用于保留动漫勾线的处理函数
+    def _preserve_anime_outlines(self, mask_uint8):
+        # 膨胀：找回被 GrabCut 切掉的黑色描边
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        mask_dilated = cv2.dilate(mask_uint8, kernel, iterations=1)
+        
+        # 模糊：边缘羽化
+        mask_float = mask_dilated.astype(np.float32) / 255.0
+        mask_blurred = cv2.GaussianBlur(mask_float, (3, 3), 0)
+        
+        # 锐化：防止边缘过虚，(val - 0.5) * contrast + 0.5
+        mask_refined = (mask_blurred - 0.5) * 6.0 + 0.5
+        mask_refined = np.clip(mask_refined, 0, 1)
+        
+        return mask_refined
+
     def process(self, img_input=None, rect=None, corrections=None):
         """
-        img_input: 输入图像 (可选，覆盖初始化时的图像)
+        img_input: 输入图像
         rect: 选区范围
         corrections: 用户修正笔画
         """
-        # 1. 图像加载逻辑 (支持延迟初始化)
+        # 图像加载
         if img_input is not None:
             if isinstance(img_input, str):
                 self.img = cv2.imread(img_input)
@@ -44,12 +47,12 @@ class AdvancedGrabCutProcessor:
                 self.img = img_input.copy()
         
         if self.img is None:
-            raise ValueError("No image provided (Please init with image or pass to process)")
+            raise ValueError("No image provided")
         
         h, w = self.img.shape[:2]
         work_img = self.img
 
-        # 2. Mask 与模型初始化
+        # Mask 与模型初始化
         mask = np.zeros((h, w), np.uint8)
         bgdModel = np.zeros((1, 65), np.float64)
         fgdModel = np.zeros((1, 65), np.float64)
@@ -60,7 +63,7 @@ class AdvancedGrabCutProcessor:
             rect = (margin, margin, w - 2*margin, h - 2*margin)
         x, y, rw, rh = rect
 
-        # 3. 确定工作模式
+        # 确定工作模式
         has_corrections = (corrections is not None and len(corrections) > 0)
 
         if has_corrections:
@@ -81,9 +84,8 @@ class AdvancedGrabCutProcessor:
                 color = cv2.GC_FGD if s_type == 'fg' else cv2.GC_BGD
                 cv2.polylines(mask, [pts], False, color, width)
 
-            # C. 运行 GrabCut (Mask 模式)
+            # 运行 GrabCut
             try:
-                # 🛠️ 修复点：rect 参数不能传 None，必须传元组，即使在 MASK 模式下会被忽略
                 cv2.grabCut(work_img, mask, rect, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_MASK)
             except cv2.error as e:
                 print(f"[ERROR] GrabCut 失败: {e}")
@@ -98,9 +100,11 @@ class AdvancedGrabCutProcessor:
                 print(f"[ERROR] GrabCut 失败: {e}")
                 return self._convert_to_rgba(self.img)
 
-        # 4. 提取结果
+        # 提取结果
         mask_result = np.where((mask == 2) | (mask == 0), 0, 255).astype('uint8')
 
-        # 5. 返回 Alpha 通道 (0.0~1.0 float)，交由外层统一合成
-        alpha_channel = (mask_result.astype(np.float32) / 255.0)
+        # 🔥 [修改处] 返回 Alpha (不再直接除以255，而是调用优化函数)
+        # 原代码: alpha_channel = (mask_result.astype(np.float32) / 255.0)
+        alpha_channel = self._preserve_anime_outlines(mask_result)
+        
         return alpha_channel

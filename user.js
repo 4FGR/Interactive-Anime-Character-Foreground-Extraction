@@ -115,7 +115,6 @@
 
     // --- 2. 编辑器 ---
     function openEditor(imgUrl) {
-        // 🔥 [关键修复] 状态全量重置
         ctx = null; canvas = null; strokes = []; 
         drawMode = 'fg'; 
         rectStart = null; rectCurrent = null;
@@ -363,7 +362,7 @@
             if (!ctx) return;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            // 1. 绘制已保存的笔画
+            // 绘制已保存的笔画
             strokes.forEach(s => {
                 ctx.beginPath();
                 // 设置样式
@@ -385,7 +384,6 @@
                     ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = 15;
                     if (s.points.length > 0) {
                         ctx.moveTo(s.points[0][0], s.points[0][1]);
-                        // 🔥 [关键修复] 单点显示
                         if (s.points.length === 1) ctx.lineTo(s.points[0][0], s.points[0][1]);
                         else s.points.forEach(p => ctx.lineTo(p[0], p[1]));
                         ctx.stroke();
@@ -393,7 +391,7 @@
                 }
             });
 
-            // 2. 绘制拖拽中的预览框 (仅 Inpaint)
+            // 绘制拖拽中的预览框 (仅 Inpaint)
             if (isDrawing && drawMode === 'inpaint' && rectStart && rectCurrent) {
                 const w = rectCurrent[0] - rectStart[0];
                 const h = rectCurrent[1] - rectStart[1];
