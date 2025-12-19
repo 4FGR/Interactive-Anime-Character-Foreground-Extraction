@@ -16,11 +16,11 @@ class MainProcessor:
         use_lama = options.get('use_lama', False)
         method = options.get('method', 'grabcut')
 
-        # 1. 去字阶段 (Inpainting)
+        # 去字阶段 (Inpainting)
         # 无论后面选什么抠图，先去字。返回的是 BGR 图片。
         work_img = self.inpainter.process(img_input, corrections, use_lama)
 
-        # 2. 抠图阶段 (Matting)
+        # 抠图阶段 (Matting)
         # 返回的是 Alpha 通道 (0.0 - 1.0 float)
         alpha_channel = None
 
@@ -32,7 +32,7 @@ class MainProcessor:
             # 现在 grabcut.process 返回的是 alpha 通道
             alpha_channel = self.grabcut.process(work_img, rect, corrections)
 
-        # 3. 合成阶段 (Compositing)
+        # 合成阶段 (Compositing)
         # 将去字后的图 + Alpha 通道 + 格子背景合成为一张图
         final_img = composite_image(work_img, alpha_channel)
         
