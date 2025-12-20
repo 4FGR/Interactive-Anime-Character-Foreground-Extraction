@@ -1,11 +1,11 @@
 // ==UserScript==
-// @name         动漫人物抠图助手 (v7.0 工程适配版)
+// @name         动漫人物抠图助手
 // @namespace    http://tampermonkey.net/
-// @version      7.0
-// @description  完美适配Python工程：支持GrabCut/DeepLearning切换，LaMa框选去字，保留所有Bug修复
-// @author       YourName
+// @version      1.0
+// @description  完美适配Python工程：支持GrabCut/DeepLearning切换，LaMa框选去字
+// @author       4FGR
 // @match        *://*/*
-// @connect      127.0.0.1
+// @connect      127.0.0.1/5000
 // @grant        GM_xmlhttpRequest
 // @grant        GM_registerMenuCommand
 // ==/UserScript==
@@ -191,7 +191,8 @@
         Object.assign(resultContainer.style, { 
             width: '45vw', height: '80vh', border: '2px dashed #555', 
             display: 'flex', justifyContent: 'center', alignItems: 'center', 
-            background: `url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAAAXNSR0IArs4c6QAAADBJREFUOE9jZGBg+M+AH3BkYGBgYCASGwV0YwZ64aMZPprhoxk+muGjGT6a4UMyQwE53xQlqY1d7AAAAABJRU5ErkJggg==')`
+            // 👇 修改为纯白背景 👇
+            background: '#ffffff' 
         });
         const resultImg = document.createElement('img');
         Object.assign(resultImg.style, { maxWidth: '100%', maxHeight: '100%', display: 'none' });
