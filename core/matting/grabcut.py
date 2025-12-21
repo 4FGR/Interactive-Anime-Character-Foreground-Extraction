@@ -84,10 +84,10 @@ class AdvancedGrabCutProcessor:
 
         if has_corrections:
             print("[ALGO] 修正模式：Mask 初始化")
-            # A. 初始化 Mask：Rect 区域设为可能前景
+            # 初始化 Mask：Rect 区域设为可能前景
             mask[y:y+rh, x:x+rw] = cv2.GC_PR_FGD
             
-            # B. 绘制用户笔画
+            # 绘制用户笔画
             for stroke in corrections:
                 s_type = stroke.get('type')
                 points = stroke.get('points')
@@ -104,16 +104,14 @@ class AdvancedGrabCutProcessor:
             try:
                 cv2.grabCut(work_img, mask, rect, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_MASK)
             except cv2.error as e:
-                print(f"[ERROR] GrabCut 失败: {e}")
+                print(f"GrabCut 失败: {e}")
                 return self._convert_to_rgba(self.img)
 
         else:
-            print("[ALGO] 初始模式：Rect 初始化")
-            # 纯粹的原始 GrabCut
             try:
                 cv2.grabCut(work_img, mask, rect, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_RECT)
             except cv2.error as e:
-                print(f"[ERROR] GrabCut 失败: {e}")
+                print(f"GrabCut 失败: {e}")
                 return self._convert_to_rgba(self.img)
 
         # 提取结果
