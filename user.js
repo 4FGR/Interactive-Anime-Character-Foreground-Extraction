@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         test
+// @name         动漫角色前景提取
 // @namespace    http://tampermonkey.net/
 // @version      1.1
-// @description  基于grabcut的动漫角色提取
+// @description  基于grabcut的动漫角色抠图
 // @author       4FGR
 // @match        *://*/*
 // @connect      127.0.0.1
