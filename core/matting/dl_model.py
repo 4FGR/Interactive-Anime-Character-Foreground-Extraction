@@ -13,7 +13,7 @@ class DLMatting:
         # 改为懒加载，避免阻塞服务启动
         self.session = None
         if HAS_REMBG:
-            print("[INFO] Rembg 模块就绪 (首次调用时初始化模型)")
+            print("Rembg 模块就绪")
 
     def run(self, img):
         if not HAS_REMBG:

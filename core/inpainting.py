@@ -14,12 +14,12 @@ class InpaintingService:
     def __init__(self):
         self.lama_model = None
         if HAS_LAMA:
-            print("[INFO] LaMa 模块已导入 (等待首次调用初始化)")
+            print("LaMa 模块已导入")
 
     def _get_model(self):
         # 懒加载
         if self.lama_model is None and HAS_LAMA:
-            print(f"[DEBUG] {time.strftime('%H:%M:%S')} - 正在初始化 LaMa 模型 (首次运行需下载权重)...")
+            print(f"[DEBUG] {time.strftime('%H:%M:%S')} - (首次运行需下载权重)")
             t_start = time.time()
             self.lama_model = SimpleLama()
             print(f"[DEBUG] {time.strftime('%H:%M:%S')} - 模型加载完成! 耗时: {time.time() - t_start:.2f}s")

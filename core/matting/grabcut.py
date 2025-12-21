@@ -19,15 +19,31 @@ class AdvancedGrabCutProcessor:
 
     # 专门用于保留动漫勾线的处理函数
     def preserve_anime_outlines(self, mask_uint8):
-        # 膨胀：找回被 GrabCut 切掉的黑色描边
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        h, w = mask_uint8.shape[:2]
+        min_dim = min(h, w) # 取短边作为参考
+        
+        # 动态计算核大小
+        # 根据720p的图片来取5x5的核，对其它分辨率按比例缩放
+        k_size = int(min_dim/720 * 5) 
+        
+        # 必须是奇数
+        if k_size % 2 == 0: k_size += 1
+        
+        # 限制范围：最小 3x3，最大 11x11
+        k_size = max(3, min(k_size, 11))
+        
+        # 执行形态学扩张
+        # 使用动态计算出的 k_size
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
         mask_dilated = cv2.dilate(mask_uint8, kernel, iterations=1)
         
-        # 模糊：边缘羽化
+        # 边缘羽化
+        # 核变大了，模糊也要跟着变大一点点，否则边缘会显得硬
+        blur_size = k_size
         mask_float = mask_dilated.astype(np.float32) / 255.0
-        mask_blurred = cv2.GaussianBlur(mask_float, (3, 3), 0)
+        mask_blurred = cv2.GaussianBlur(mask_float, (blur_size, blur_size), 0)
         
-        # 锐化：防止边缘过虚，(val - 0.5) * contrast + 0.5
+        # 锐化重塑
         mask_refined = (mask_blurred - 0.5) * 6.0 + 0.5
         mask_refined = np.clip(mask_refined, 0, 1)
         
