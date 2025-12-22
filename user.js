@@ -1,64 +1,135 @@
 // ==UserScript==
-// @name         动漫人物抠图助手 (v7.0 工程适配版)
+// @name         动漫角色前景提取
 // @namespace    http://tampermonkey.net/
-// @version      7.0
-// @description  完美适配Python工程：支持GrabCut/DeepLearning切换，LaMa框选去字，保留所有Bug修复
-// @author       YourName
+// @version      1.1
+// @description  基于grabcut的动漫角色抠图
+// @author       4FGR
 // @match        *://*/*
 // @connect      127.0.0.1
 // @grant        GM_xmlhttpRequest
 // @grant        GM_registerMenuCommand
+// @grant        GM_addStyle
 // ==/UserScript==
 
 (function() {
     'use strict';
 
-    // --- 全局变量 ---
+    const css = `
+        .ac-float-ball {
+            position: fixed; top: 30%; right: 20px; z-index: 999999;
+            width: 50px; height: 50px; border-radius: 50%;
+            background: linear-gradient(135deg, #2f3640, #353b48);
+            color: #fff; display: flex; justify-content: center; align-items: center;
+            font-size: 24px; cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+            border: 2px solid rgba(255,255,255,0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+            user-select: none;
+        }
+        .ac-float-ball:hover { transform: scale(1.1); box-shadow: 0 6px 20px rgba(0,0,0,0.5); }
+        .ac-overlay {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0,0,0,0.4); z-index: 100000; cursor: crosshair;
+            backdrop-filter: blur(2px);
+        }
+        .ac-selection-box {
+            border: 2px solid #ff4757; position: absolute; display: none;
+            background: rgba(255, 71, 87, 0.1);
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+        }
+        .ac-editor-mask {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(18, 18, 18, 0.95); z-index: 200000;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            backdrop-filter: blur(5px);
+        }
+        .ac-toolbar {
+            margin-bottom: 15px; display: flex; gap: 10px;
+            background: #2d3436; padding: 8px; border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        .ac-btn-group { display: flex; gap: 5px; background: #1e272e; padding: 4px; border-radius: 8px; }
+        .ac-btn {
+            padding: 8px 16px; border: none; border-radius: 6px;
+            cursor: pointer; font-weight: 600; font-size: 13px;
+            transition: all 0.2s; color: #b2bec3; background: transparent;
+            display: flex; align-items: center; gap: 5px;
+        }
+        .ac-btn:hover { color: #fff; background: rgba(255,255,255,0.05); }
+        .ac-btn.active-fg { background: #2ed573; color: #fff; box-shadow: 0 2px 8px rgba(46, 213, 115, 0.4); }
+        .ac-btn.active-bg { background: #ff4757; color: #fff; box-shadow: 0 2px 8px rgba(255, 71, 87, 0.4); }
+        .ac-btn.active-inpaint { background: #1e90ff; color: #fff; box-shadow: 0 2px 8px rgba(30, 144, 255, 0.4); }
+
+        .ac-workspace { display: flex; gap: 20px; align-items: flex-start; height: 80vh; }
+        .ac-canvas-box {
+            position: relative; border: 2px solid #444; border-radius: 8px; overflow: hidden;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3); background: #000;
+        }
+        .ac-result-box {
+            width: 45vw; height: 100%; border: 2px dashed #555; border-radius: 8px;
+            display: flex; justify-content: center; align-items: center;
+            background: #ffffff; /* 纯白背景 */
+            position: relative; overflow: hidden;
+        }
+        .ac-bottom-bar {
+            margin-top: 15px; display: flex; gap: 20px;
+            background: #2d3436; padding: 10px 20px; border-radius: 12px;
+            align-items: center; color: #dfe6e9; font-size: 14px;
+            box-shadow: 0 -4px 12px rgba(0,0,0,0.2);
+        }
+        .ac-checkbox-wrapper { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+        .ac-checkbox { accent-color: #2ed573; transform: scale(1.1); cursor: pointer; }
+        .ac-divider { width: 1px; height: 24px; background: #636e72; }
+
+        .ac-btn-action { background: #57606f; color: white; }
+        .ac-btn-run { background: linear-gradient(135deg, #3742fa, #5352ed); color: white; }
+        .ac-btn-run:hover { box-shadow: 0 4px 12px rgba(55, 66, 250, 0.4); transform: translateY(-1px); }
+        .ac-btn-close { background: #ff4757; color: white; }
+        .ac-btn-save {
+            margin-top: 15px; padding: 10px 30px; background: #2ed573; color: white;
+            border: none; border-radius: 20px; cursor: pointer; font-weight: bold;
+            box-shadow: 0 4px 12px rgba(46, 213, 115, 0.3); transition: transform 0.2s;
+        }
+        .ac-btn-save:hover { transform: translateY(-2px); }
+        .ac-disabled { opacity: 0.7; cursor: wait; }
+    `;
+
+    const styleEl = document.createElement('style');
+    styleEl.innerHTML = css;
+    document.head.appendChild(styleEl);
+
     let strokes = [];
     let currentImgBlob = null;
     let isDrawing = false;
     let currentStroke = null;
     let editorUI = null;
     let canvas = null;
-    let ctx = null; // 画笔上下文
-    
-    // 状态与选项
-    let drawMode = 'fg'; // 'fg', 'bg', 'inpaint'
-    let rectStart = null; // 框选起点
-    let rectCurrent = null; // 框选当前点
-    
-    let useLama = false; // 是否启用去字
-    let algoMethod = 'grabcut'; // 'grabcut' | 'dl'
+    let ctx = null;
+
+    let drawMode = 'fg';
+    let rectStart = null;
+    let rectCurrent = null;
+
+    let useLama = false;
 
     // --- 0. 悬浮球 ---
     const container = document.createElement('div');
-    Object.assign(container.style, {
-        position: 'fixed', top: '30%', right: '20px', zIndex: '999999',
-        display: 'flex', flexDirection: 'column'
-    });
-    document.body.appendChild(container);
-
     const ball = document.createElement('div');
+    ball.className = 'ac-float-ball';
     ball.innerText = '✂️';
-    Object.assign(ball.style, {
-        width: '50px', height: '50px', borderRadius: '50%', background: '#2f3640', color: '#fff',
-        display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '24px', cursor: 'pointer',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.3)', border: '2px solid rgba(255,255,255,0.2)'
-    });
-    container.appendChild(ball);
     ball.onclick = initSelection;
+    container.appendChild(ball);
+    document.body.appendChild(container);
 
     // --- 1. 截图选区 ---
     function initSelection() {
-        container.style.display = 'none';
+        ball.style.display = 'none';
         const overlay = document.createElement('div');
-        Object.assign(overlay.style, {
-            position: 'fixed', top: '0', left: '0', width: '100vw', height: '100vh',
-            background: 'rgba(0,0,0,0.3)', zIndex: '100000', cursor: 'crosshair'
-        });
-        
+        overlay.className = 'ac-overlay';
+
         const box = document.createElement('div');
-        Object.assign(box.style, { border: '2px solid #ff4757', position: 'absolute', display: 'none' });
+        box.className = 'ac-selection-box';
         overlay.appendChild(box);
         document.body.appendChild(overlay);
 
@@ -67,7 +138,7 @@
             if (e.button !== 0) return;
             startX = e.clientX; startY = e.clientY;
             box.style.display = 'block';
-            
+
             const onMove = (ev) => {
                 const w = Math.abs(ev.clientX - startX);
                 const h = Math.abs(ev.clientY - startY);
@@ -76,7 +147,7 @@
                 box.style.width = w + 'px';
                 box.style.height = h + 'px';
             };
-            
+
             const onUp = async (ev) => {
                 overlay.remove();
                 const rect = {
@@ -84,12 +155,12 @@
                     w: Math.abs(ev.clientX - startX), h: Math.abs(ev.clientY - startY)
                 };
                 if (rect.w > 10 && rect.h > 10) await doCapture(rect);
-                container.style.display = 'flex';
+                ball.style.display = 'flex';
             };
             window.addEventListener('mousemove', onMove);
             window.addEventListener('mouseup', onUp, { once: true });
         };
-        overlay.oncontextmenu = (e) => { e.preventDefault(); overlay.remove(); container.style.display = 'flex'; };
+        overlay.oncontextmenu = (e) => { e.preventDefault(); overlay.remove(); ball.style.display = 'flex'; };
     }
 
     async function doCapture(rect) {
@@ -110,71 +181,52 @@
                 currentImgBlob = b;
                 openEditor(URL.createObjectURL(b));
             }, 'image/png');
-        } catch (e) { console.error(e); container.style.display = 'flex'; }
+        } catch (e) { console.error(e); ball.style.display = 'flex'; }
     }
 
     // --- 2. 编辑器 ---
     function openEditor(imgUrl) {
-        ctx = null; canvas = null; strokes = []; 
-        drawMode = 'fg'; 
+        ctx = null; canvas = null; strokes = [];
+        drawMode = 'fg';
         rectStart = null; rectCurrent = null;
-        // 默认选项重置
-        useLama = false; algoMethod = 'grabcut';
+        useLama = false;
 
         editorUI = document.createElement('div');
-        Object.assign(editorUI.style, {
-            position: 'fixed', top: '0', left: '0', width: '100vw', height: '100vh',
-            background: 'rgba(30,30,30,0.95)', zIndex: '200000', display: 'flex',
-            flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
-        });
+        editorUI.className = 'ac-editor-mask';
 
-        // --- 顶部工具栏 (画笔模式) ---
+        // 顶部工具栏
         const toolbar = document.createElement('div');
-        Object.assign(toolbar.style, {
-            marginBottom: '10px', display: 'flex', gap: '15px', background: '#333', padding: '10px', borderRadius: '8px', alignItems: 'center'
-        });
-        const btnStyle = "padding:6px 15px; border:none; border-radius:4px; cursor:pointer; font-weight:bold; font-family:sans-serif;";
-        
+        toolbar.className = 'ac-toolbar';
         toolbar.innerHTML = `
-            <div style="display:flex; gap:5px; background:#444; padding:3px; border-radius:5px;">
-                <button id="mode-fg" style="${btnStyle}">🟢 保留 (笔刷)</button>
-                <button id="mode-bg" style="${btnStyle}">🔴 剔除 (笔刷)</button>
-                <button id="mode-inpaint" style="${btnStyle}">🔵 框选去字</button>
+            <div class="ac-btn-group">
+                <button id="mode-fg" class="ac-btn">🟢 保留</button>
+                <button id="mode-bg" class="ac-btn">🔴 剔除</button>
+                <button id="mode-inpaint" class="ac-btn">🔵 框选去字</button>
             </div>
         `;
 
-        // --- 底部工具栏 (选项与操作) ---
+        // 底部工具栏
         const bottomBar = document.createElement('div');
-        Object.assign(bottomBar.style, {
-            marginTop: '10px', display: 'flex', gap: '20px', background: '#222', padding: '10px', borderRadius: '8px', alignItems: 'center', color: '#fff', fontSize:'14px'
-        });
+        bottomBar.className = 'ac-bottom-bar';
         bottomBar.innerHTML = `
-            <div style="display:flex; alignItems:center; gap:5px;">
-                <input type="checkbox" id="chk-lama" style="transform:scale(1.2);">
-                <label for="chk-lama" style="cursor:pointer;">启用 LaMa 智能去字</label>
-            </div>
-            <div style="width:1px; height:20px; background:#555;"></div>
-            <div style="display:flex; alignItems:center; gap:5px;">
-                <span>算法:</span>
-                <select id="sel-algo" style="padding:5px; border-radius:4px; background:#444; color:white; border:none;">
-                    <option value="grabcut">GrabCut (传统交互)</option>
-                    <option value="dl">AI 模型 (一键动漫)</option>
-                </select>
-            </div>
-            <div style="width:1px; height:20px; background:#555;"></div>
-            <button id="btn-undo" style="${btnStyle} background:#57606f; color:white;">↩️ 撤销</button>
-            <button id="btn-run" style="${btnStyle} background:#3742fa; color:white;">▶️ 生成结果</button>
-            <button id="btn-close" style="${btnStyle} background:#ff4757; color:white;">关闭</button>
+            <label class="ac-checkbox-wrapper">
+                <input type="checkbox" id="chk-lama" class="ac-checkbox">
+                <span>LaMa 智能去字</span>
+            </label>
+            <div class="ac-divider"></div>
+            <button id="btn-undo" class="ac-btn ac-btn-action">↩️ 撤销</button>
+            <button id="btn-run" class="ac-btn ac-btn-run">▶️ 生成结果</button>
+            <div class="ac-divider"></div>
+            <button id="btn-close" class="ac-btn ac-btn-close">关闭</button>
         `;
 
-        editorUI.appendChild(toolbar);
-
+        // 工作区
         const workspace = document.createElement('div');
-        Object.assign(workspace.style, { display: 'flex', gap: '20px', alignItems: 'flex-start' });
-        
+        workspace.className = 'ac-workspace';
+
         const editContainer = document.createElement('div');
-        Object.assign(editContainer.style, { position: 'relative', border: '2px solid #555', lineHeight: '0' });
-        
+        editContainer.className = 'ac-canvas-box';
+
         const imgEl = document.createElement('img');
         imgEl.src = imgUrl;
         imgEl.style.maxWidth = '45vw'; imgEl.style.maxHeight = '80vh'; imgEl.style.display = 'block';
@@ -182,70 +234,67 @@
 
         canvas = document.createElement('canvas');
         Object.assign(canvas.style, { position: 'absolute', top: '0', left: '0', width: '100%', height: '100%' });
-        
+
         editContainer.appendChild(imgEl);
         editContainer.appendChild(canvas);
-        workspace.appendChild(editContainer);
+
+        // 结果区
+        const rightCol = document.createElement('div');
+        Object.assign(rightCol.style, { display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%' });
 
         const resultContainer = document.createElement('div');
-        Object.assign(resultContainer.style, { 
-            width: '45vw', height: '80vh', border: '2px dashed #555', 
-            display: 'flex', justifyContent: 'center', alignItems: 'center', 
-            background: `url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAAAXNSR0IArs4c6QAAADBJREFUOE9jZGBg+M+AH3BkYGBgYCASGwV0YwZ64aMZPprhoxk+muGjGT6a4UMyQwE53xQlqY1d7AAAAABJRU5ErkJggg==')`
-        });
+        resultContainer.className = 'ac-result-box';
+
         const resultImg = document.createElement('img');
         Object.assign(resultImg.style, { maxWidth: '100%', maxHeight: '100%', display: 'none' });
         resultContainer.appendChild(resultImg);
-        
+
         const dlBtn = document.createElement('button');
+        dlBtn.className = 'ac-btn-save';
         dlBtn.innerText = '💾 保存图片';
-        Object.assign(dlBtn.style, { marginTop: '10px', display: 'none', padding: '10px 30px', background: '#2ed573', color:'white', border:'none', borderRadius:'5px', cursor:'pointer' });
-        
-        const rightCol = document.createElement('div');
-        Object.assign(rightCol.style, { display: 'flex', flexDirection: 'column', alignItems: 'center' });
+        dlBtn.style.display = 'none';
+
         rightCol.appendChild(resultContainer);
         rightCol.appendChild(dlBtn);
-        
+
+        workspace.appendChild(editContainer);
         workspace.appendChild(rightCol);
+
+        editorUI.appendChild(toolbar);
         editorUI.appendChild(workspace);
-        editorUI.appendChild(bottomBar); // 添加底部工具栏
+        editorUI.appendChild(bottomBar);
         document.body.appendChild(editorUI);
 
-        imgEl.onload = () => { 
-            canvas.width = imgEl.naturalWidth; 
-            canvas.height = imgEl.naturalHeight; 
+        imgEl.onload = () => {
+            canvas.width = imgEl.naturalWidth;
+            canvas.height = imgEl.naturalHeight;
             ctx = canvas.getContext('2d');
         };
 
-        // --- 控件绑定 ---
         const btnFg = document.getElementById('mode-fg');
         const btnBg = document.getElementById('mode-bg');
         const btnInpaint = document.getElementById('mode-inpaint');
-        
         const chkLama = document.getElementById('chk-lama');
-        const selAlgo = document.getElementById('sel-algo');
-        
         const btnRun = document.getElementById('btn-run');
         const btnUndo = document.getElementById('btn-undo');
         const btnClose = document.getElementById('btn-close');
 
-        // 选项监听
         chkLama.onchange = (e) => { useLama = e.target.checked; };
-        selAlgo.onchange = (e) => { algoMethod = e.target.value; };
 
         function updateModeUI() {
-            [btnFg, btnBg, btnInpaint].forEach(btn => btn.style.border = '2px solid transparent');
-            btnFg.style.background = 'transparent'; btnBg.style.background = 'transparent'; btnInpaint.style.background = 'transparent';
+            [btnFg, btnBg, btnInpaint].forEach(btn => {
+                btn.classList.remove('active-fg', 'active-bg', 'active-inpaint');
+            });
 
             if (drawMode === 'fg') {
-                btnFg.style.background = '#2ed573'; btnFg.style.color = 'white'; btnFg.style.border = '2px solid #fff';
+                btnFg.classList.add('active-fg');
                 canvas.style.cursor = 'crosshair';
             } else if (drawMode === 'bg') {
-                btnBg.style.background = '#ff4757'; btnBg.style.color = 'white'; btnBg.style.border = '2px solid #fff';
+                btnBg.classList.add('active-bg');
                 canvas.style.cursor = 'not-allowed';
             } else if (drawMode === 'inpaint') {
-                btnInpaint.style.background = '#1e90ff'; btnInpaint.style.color = 'white'; btnInpaint.style.border = '2px solid #fff';
-                canvas.style.cursor = 'cell'; // 框选光标
+                btnInpaint.classList.add('active-inpaint');
+                canvas.style.cursor = 'cell';
             }
         }
         updateModeUI();
@@ -257,18 +306,13 @@
         btnRun.onclick = async () => {
             if (!currentImgBlob) return;
             const originalText = btnRun.innerText;
-            btnRun.innerText = '⏳ 计算中...'; btnRun.disabled = true; btnRun.style.opacity = '0.7';
+            btnRun.innerText = '⏳ 计算中...'; btnRun.disabled = true; btnRun.classList.add('ac-disabled');
 
-            // 构建参数
-            const options = {
-                use_lama: useLama,
-                method: algoMethod
-            };
+            const options = { use_lama: useLama, method: 'grabcut' };
 
             const fd = new FormData();
             fd.append('image', currentImgBlob, 'src.png');
             fd.append('corrections', JSON.stringify(strokes));
-            // 🔥 [关键更新] 发送选项到新后端
             fd.append('options', JSON.stringify(options));
 
             try {
@@ -280,31 +324,28 @@
                 dlBtn.style.display = 'block';
                 dlBtn.onclick = () => { const a = document.createElement('a'); a.href = resUrl; a.download = 'cutout.png'; a.click(); };
             } catch(e) { alert("处理失败，请检查后端是否开启"); }
-            finally { btnRun.innerText = originalText; btnRun.disabled = false; btnRun.style.opacity = '1'; }
+            finally { btnRun.innerText = originalText; btnRun.disabled = false; btnRun.classList.remove('ac-disabled'); }
         };
 
         btnUndo.onclick = () => { strokes.pop(); redrawCanvas(); };
-        
-        btnClose.onclick = () => { 
-            editorUI.remove(); 
-            container.style.display = 'flex';
-            canvas = null; ctx = null; // 清理
+
+        btnClose.onclick = () => {
+            editorUI.remove();
+            ball.style.display = 'flex';
+            canvas = null; ctx = null;
         };
 
         canvas.oncontextmenu = (e) => e.preventDefault();
-        
-        // --- 鼠标交互逻辑 (支持笔刷和框选) ---
+
         canvas.onmousedown = (e) => {
             if (e.button !== 0) return;
             e.preventDefault();
             isDrawing = true;
-            
+
             if (drawMode === 'inpaint') {
-                // 框选模式：只记录起点
                 rectStart = getMousePos(e);
                 rectCurrent = rectStart;
             } else {
-                // 笔刷模式：开始画线
                 addPoint(e);
             }
         };
@@ -312,20 +353,17 @@
         window.addEventListener('mousemove', (e) => {
             if (!isDrawing) return;
             e.preventDefault();
-            
+
             if (drawMode === 'inpaint') {
-                // 框选模式：更新预览
                 rectCurrent = getMousePos(e);
                 redrawCanvas();
             } else {
-                // 笔刷模式：继续画线
                 addPoint(e);
             }
         });
 
-        window.addEventListener('mouseup', () => { 
+        window.addEventListener('mouseup', () => {
             if (isDrawing && drawMode === 'inpaint' && rectStart && rectCurrent) {
-                // 框选结束：保存矩形笔画
                 strokes.push({
                     type: 'inpaint',
                     shape: 'rect',
@@ -334,8 +372,8 @@
                 rectStart = null; rectCurrent = null;
                 redrawCanvas();
             }
-            isDrawing = false; 
-            currentStroke = null; 
+            isDrawing = false;
+            currentStroke = null;
         });
 
         function getMousePos(e) {
@@ -361,26 +399,22 @@
         function redrawCanvas() {
             if (!ctx) return;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            // 绘制已保存的笔画
+
             strokes.forEach(s => {
                 ctx.beginPath();
-                // 设置样式
                 if (s.type === 'fg') ctx.strokeStyle = 'rgba(46, 213, 115, 0.6)';
                 else if (s.type === 'bg') ctx.strokeStyle = 'rgba(255, 71, 87, 0.6)';
                 else if (s.type === 'inpaint') {
-                    ctx.fillStyle = 'rgba(30, 144, 255, 0.4)'; 
+                    ctx.fillStyle = 'rgba(30, 144, 255, 0.4)';
                     ctx.strokeStyle = 'rgba(30, 144, 255, 0.8)';
                 }
 
                 if (s.shape === 'rect') {
-                    // 绘制矩形
                     const w = s.points[1][0] - s.points[0][0];
                     const h = s.points[1][1] - s.points[0][1];
                     ctx.fillRect(s.points[0][0], s.points[0][1], w, h);
                     ctx.strokeRect(s.points[0][0], s.points[0][1], w, h);
                 } else {
-                    // 绘制线条
                     ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = 15;
                     if (s.points.length > 0) {
                         ctx.moveTo(s.points[0][0], s.points[0][1]);
@@ -391,7 +425,6 @@
                 }
             });
 
-            // 绘制拖拽中的预览框 (仅 Inpaint)
             if (isDrawing && drawMode === 'inpaint' && rectStart && rectCurrent) {
                 const w = rectCurrent[0] - rectStart[0];
                 const h = rectCurrent[1] - rectStart[1];

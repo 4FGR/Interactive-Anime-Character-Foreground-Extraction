@@ -14,12 +14,12 @@ class InpaintingService:
     def __init__(self):
         self.lama_model = None
         if HAS_LAMA:
-            print("[INFO] LaMa 模块已导入 (等待首次调用初始化)")
+            print("LaMa 模块已导入")
 
     def _get_model(self):
         # 懒加载
         if self.lama_model is None and HAS_LAMA:
-            print(f"[DEBUG] {time.strftime('%H:%M:%S')} - 正在初始化 LaMa 模型 (首次运行需下载权重)...")
+            print(f"[DEBUG] {time.strftime('%H:%M:%S')} - (首次运行需下载权重)")
             t_start = time.time()
             self.lama_model = SimpleLama()
             print(f"[DEBUG] {time.strftime('%H:%M:%S')} - 模型加载完成! 耗时: {time.time() - t_start:.2f}s")
@@ -30,7 +30,7 @@ class InpaintingService:
         inpaint_mask = np.zeros((h, w), dtype=np.uint8)
         has_draw = False
 
-        # 1. 生成 Mask
+        # 生成 Mask
         for stroke in corrections:
             if stroke.get('type') == 'inpaint':
                 has_draw = True
@@ -49,7 +49,7 @@ class InpaintingService:
         if not has_draw:
             return img
 
-        # 2. 选择算法执行
+        # 选择算法执行
         model = self._get_model()
         
         if use_lama and model:
@@ -68,7 +68,7 @@ class InpaintingService:
             except Exception as e:
                 print(f"[ERROR] LaMa Error: {e}, 回退到 OpenCV")
 
-        # 3. 降级方案 (OpenCV)
+        # 降级方案 (OpenCV)
         print("[ALGO] Running OpenCV Inpainting...")
         inpaint_mask = cv2.dilate(inpaint_mask, np.ones((5,5), np.uint8))
         return cv2.inpaint(img, inpaint_mask, 3, cv2.INPAINT_TELEA)

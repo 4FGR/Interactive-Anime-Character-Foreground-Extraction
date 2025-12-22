@@ -18,16 +18,32 @@ class AdvancedGrabCutProcessor:
         return cv2.merge([b, g, r, alpha])
 
     # 专门用于保留动漫勾线的处理函数
-    def _preserve_anime_outlines(self, mask_uint8):
-        # 膨胀：找回被 GrabCut 切掉的黑色描边
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    def preserve_anime_outlines(self, mask_uint8):
+        h, w = mask_uint8.shape[:2]
+        min_dim = min(h, w) # 取短边作为参考
+        
+        # 动态计算核大小
+        # 根据720p的图片来取5x5的核，对其它分辨率按比例缩放
+        k_size = int(min_dim/720 * 5) 
+        
+        # 必须是奇数
+        if k_size % 2 == 0: k_size += 1
+        
+        # 限制范围：最小 3x3，最大 11x11
+        k_size = max(3, min(k_size, 11))
+        
+        # 执行形态学扩张
+        # 使用动态计算出的 k_size
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
         mask_dilated = cv2.dilate(mask_uint8, kernel, iterations=1)
         
-        # 模糊：边缘羽化
+        # 边缘羽化
+        # 核变大了，模糊也要跟着变大一点点，否则边缘会显得硬
+        blur_size = k_size
         mask_float = mask_dilated.astype(np.float32) / 255.0
-        mask_blurred = cv2.GaussianBlur(mask_float, (3, 3), 0)
+        mask_blurred = cv2.GaussianBlur(mask_float, (blur_size, blur_size), 0)
         
-        # 锐化：防止边缘过虚，(val - 0.5) * contrast + 0.5
+        # 锐化重塑
         mask_refined = (mask_blurred - 0.5) * 6.0 + 0.5
         mask_refined = np.clip(mask_refined, 0, 1)
         
@@ -68,10 +84,10 @@ class AdvancedGrabCutProcessor:
 
         if has_corrections:
             print("[ALGO] 修正模式：Mask 初始化")
-            # A. 初始化 Mask：Rect 区域设为可能前景
+            # 初始化 Mask：Rect 区域设为可能前景
             mask[y:y+rh, x:x+rw] = cv2.GC_PR_FGD
             
-            # B. 绘制用户笔画
+            # 绘制用户笔画
             for stroke in corrections:
                 s_type = stroke.get('type')
                 points = stroke.get('points')
@@ -88,23 +104,20 @@ class AdvancedGrabCutProcessor:
             try:
                 cv2.grabCut(work_img, mask, rect, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_MASK)
             except cv2.error as e:
-                print(f"[ERROR] GrabCut 失败: {e}")
+                print(f"GrabCut 失败: {e}")
                 return self._convert_to_rgba(self.img)
 
         else:
-            print("[ALGO] 初始模式：Rect 初始化")
-            # 纯粹的原始 GrabCut
             try:
                 cv2.grabCut(work_img, mask, rect, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_RECT)
             except cv2.error as e:
-                print(f"[ERROR] GrabCut 失败: {e}")
+                print(f"GrabCut 失败: {e}")
                 return self._convert_to_rgba(self.img)
 
         # 提取结果
         mask_result = np.where((mask == 2) | (mask == 0), 0, 255).astype('uint8')
 
-        # 🔥 [修改处] 返回 Alpha (不再直接除以255，而是调用优化函数)
-        # 原代码: alpha_channel = (mask_result.astype(np.float32) / 255.0)
-        alpha_channel = self._preserve_anime_outlines(mask_result)
+        # 返回 Alpha (不再直接除以255，而是调用优化函数)
+        alpha_channel = self.preserve_anime_outlines(mask_result)
         
         return alpha_channel
