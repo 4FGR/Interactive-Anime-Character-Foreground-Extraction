@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         动漫角色前景提取
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      1.3
 // @description  基于grabcut的动漫角色抠图
 // @author       4FGR
 // @match        *://*/*
@@ -20,17 +20,18 @@
             width: 50px; height: 50px; border-radius: 50%;
             background: linear-gradient(135deg, #2f3640, #353b48);
             color: #fff; display: flex; justify-content: center; align-items: center;
-            font-size: 24px; cursor: pointer;
+            font-size: 24px; cursor: move;
             box-shadow: 0 4px 15px rgba(0,0,0,0.4);
             border: 2px solid rgba(255,255,255,0.1);
             transition: transform 0.2s, box-shadow 0.2s;
             user-select: none;
+            touch-action: none;
         }
-        .ac-float-ball:hover { transform: scale(1.1); box-shadow: 0 6px 20px rgba(0,0,0,0.5); }
+        .ac-float-ball:active { box-shadow: 0 8px 25px rgba(0,0,0,0.6); }
+
         .ac-overlay {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             background: rgba(0,0,0,0.4); z-index: 100000; cursor: crosshair;
-            backdrop-filter: blur(2px);
         }
         .ac-selection-box {
             border: 2px solid #ff4757; position: absolute; display: none;
@@ -69,7 +70,7 @@
         .ac-result-box {
             width: 45vw; height: 100%; border: 2px dashed #555; border-radius: 8px;
             display: flex; justify-content: center; align-items: center;
-            background: #ffffff; /* 纯白背景 */
+            background: #ffffff;
             position: relative; overflow: hidden;
         }
         .ac-bottom-bar {
@@ -113,16 +114,83 @@
 
     let useLama = false;
 
-    // --- 0. 悬浮球 ---
     const container = document.createElement('div');
     const ball = document.createElement('div');
     ball.className = 'ac-float-ball';
     ball.innerText = '✂️';
-    ball.onclick = initSelection;
+
+    GM_registerMenuCommand("重置悬浮球位置", () => {
+        ball.style.top = '30%';
+        ball.style.right = '20px';
+        ball.style.left = 'auto';
+        ball.style.bottom = 'auto';
+    });
+
+    let isDraggingBall = false;
+    let hasMoved = false;
+    let dragStartX, dragStartY;
+    let initialLeft, initialTop;
+
+    ball.onmousedown = (e) => {
+        if (e.button !== 0) return;
+        isDraggingBall = true;
+        hasMoved = false;
+
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+
+        const rect = ball.getBoundingClientRect();
+        initialLeft = rect.left;
+        initialTop = rect.top;
+
+        ball.style.right = 'auto';
+        ball.style.bottom = 'auto';
+        ball.style.left = initialLeft + 'px';
+        ball.style.top = initialTop + 'px';
+
+        ball.style.transition = 'none';
+    };
+
+    window.addEventListener('mousemove', (e) => {
+        if (!isDraggingBall) return;
+        e.preventDefault();
+
+        const dx = e.clientX - dragStartX;
+        const dy = e.clientY - dragStartY;
+
+        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) hasMoved = true;
+
+        let newLeft = initialLeft + dx;
+        let newTop = initialTop + dy;
+
+        const winW = window.innerWidth;
+        const winH = window.innerHeight;
+        const ballW = ball.offsetWidth;
+        const ballH = ball.offsetHeight;
+
+        newLeft = Math.max(0, Math.min(newLeft, winW - ballW));
+        newTop = Math.max(0, Math.min(newTop, winH - ballH));
+
+        ball.style.left = newLeft + 'px';
+        ball.style.top = newTop + 'px';
+    });
+
+    window.addEventListener('mouseup', () => {
+        if (isDraggingBall) {
+            isDraggingBall = false;
+            ball.style.transition = 'transform 0.2s, box-shadow 0.2s';
+        }
+    });
+
+    ball.onclick = () => {
+        if (!hasMoved) {
+            initSelection();
+        }
+    };
+
     container.appendChild(ball);
     document.body.appendChild(container);
 
-    // --- 1. 截图选区 ---
     function initSelection() {
         ball.style.display = 'none';
         const overlay = document.createElement('div');
@@ -184,7 +252,6 @@
         } catch (e) { console.error(e); ball.style.display = 'flex'; }
     }
 
-    // --- 2. 编辑器 ---
     function openEditor(imgUrl) {
         ctx = null; canvas = null; strokes = [];
         drawMode = 'fg';
@@ -194,7 +261,6 @@
         editorUI = document.createElement('div');
         editorUI.className = 'ac-editor-mask';
 
-        // 顶部工具栏
         const toolbar = document.createElement('div');
         toolbar.className = 'ac-toolbar';
         toolbar.innerHTML = `
@@ -205,7 +271,6 @@
             </div>
         `;
 
-        // 底部工具栏
         const bottomBar = document.createElement('div');
         bottomBar.className = 'ac-bottom-bar';
         bottomBar.innerHTML = `
@@ -220,7 +285,6 @@
             <button id="btn-close" class="ac-btn ac-btn-close">关闭</button>
         `;
 
-        // 工作区
         const workspace = document.createElement('div');
         workspace.className = 'ac-workspace';
 
@@ -238,7 +302,6 @@
         editContainer.appendChild(imgEl);
         editContainer.appendChild(canvas);
 
-        // 结果区
         const rightCol = document.createElement('div');
         Object.assign(rightCol.style, { display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%' });
 
