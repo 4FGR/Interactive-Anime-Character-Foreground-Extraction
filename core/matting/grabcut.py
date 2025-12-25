@@ -44,7 +44,7 @@ class AdvancedGrabCutProcessor:
         mask_blurred = cv2.GaussianBlur(mask_float, (blur_size, blur_size), 0)
         
         # 锐化重塑
-        mask_refined = (mask_blurred - 0.5) * 6.0 + 0.5
+        mask_refined = (mask_blurred - 0.5) * 2.0 + 0.5
         mask_refined = np.clip(mask_refined, 0, 1)
         
         return mask_refined
@@ -83,7 +83,6 @@ class AdvancedGrabCutProcessor:
         has_corrections = (corrections is not None and len(corrections) > 0)
 
         if has_corrections:
-            print("[ALGO] 修正模式：Mask 初始化")
             # 初始化 Mask：Rect 区域设为可能前景
             mask[y:y+rh, x:x+rw] = cv2.GC_PR_FGD
             
@@ -117,7 +116,7 @@ class AdvancedGrabCutProcessor:
         # 提取结果
         mask_result = np.where((mask == 2) | (mask == 0), 0, 255).astype('uint8')
 
-        # 返回 Alpha (不再直接除以255，而是调用优化函数)
+        # 返回 Alpha
         alpha_channel = self.preserve_anime_outlines(mask_result)
         
         return alpha_channel

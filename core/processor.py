@@ -13,7 +13,6 @@ class MainProcessor:
         use_lama = options.get('use_lama', False)
 
         # 去字
-        # 这一步不能删。它处理用户的"框选去字"操作，
         work_img = self.inpainter.process(img_input, corrections, use_lama)
 
         # 抠图 (Matting)

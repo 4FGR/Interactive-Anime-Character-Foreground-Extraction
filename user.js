@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         动漫角色前景提取
 // @namespace    http://tampermonkey.net/
-// @version      1.3
-// @description  基于grabcut的动漫角色抠图
+// @version      1.4
+// @description  基于grabcut的动漫角色抠图，新增画笔大小调节功能
 // @author       4FGR
 // @match        *://*/*
 // @connect      127.0.0.1
@@ -46,9 +46,10 @@
             backdrop-filter: blur(5px);
         }
         .ac-toolbar {
-            margin-bottom: 15px; display: flex; gap: 10px;
-            background: #2d3436; padding: 8px; border-radius: 12px;
+            margin-bottom: 15px; display: flex; gap: 15px;
+            background: #2d3436; padding: 8px 15px; border-radius: 12px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            align-items: center;
         }
         .ac-btn-group { display: flex; gap: 5px; background: #1e272e; padding: 4px; border-radius: 8px; }
         .ac-btn {
@@ -94,6 +95,10 @@
         }
         .ac-btn-save:hover { transform: translateY(-2px); }
         .ac-disabled { opacity: 0.7; cursor: wait; }
+
+        /* 滑动条样式 */
+        .ac-slider-group { display: flex; align-items: center; gap: 8px; color: #b2bec3; font-size: 13px; background: #1e272e; padding: 4px 10px; border-radius: 8px; }
+        input[type=range] { width: 100px; cursor: pointer; accent-color: #0984e3; }
     `;
 
     const styleEl = document.createElement('style');
@@ -111,6 +116,9 @@
     let drawMode = 'fg';
     let rectStart = null;
     let rectCurrent = null;
+
+    // 新增：当前画笔大小变量，默认15
+    let currentBrushSize = 15;
 
     let useLama = false;
 
@@ -257,17 +265,25 @@
         drawMode = 'fg';
         rectStart = null; rectCurrent = null;
         useLama = false;
+        currentBrushSize = 15; // 打开时重置大小
 
         editorUI = document.createElement('div');
         editorUI.className = 'ac-editor-mask';
 
         const toolbar = document.createElement('div');
         toolbar.className = 'ac-toolbar';
+
+        // 修改了这里：添加了滑动条
         toolbar.innerHTML = `
             <div class="ac-btn-group">
                 <button id="mode-fg" class="ac-btn">🟢 保留</button>
                 <button id="mode-bg" class="ac-btn">🔴 剔除</button>
                 <button id="mode-inpaint" class="ac-btn">🔵 框选去字</button>
+            </div>
+            <div class="ac-slider-group">
+                <span>🖊️ 大小</span>
+                <input type="range" id="brush-slider" min="1" max="100" value="15">
+                <span id="brush-val" style="min-width:20px; text-align:center;">15</span>
             </div>
         `;
 
@@ -337,12 +353,23 @@
         const btnFg = document.getElementById('mode-fg');
         const btnBg = document.getElementById('mode-bg');
         const btnInpaint = document.getElementById('mode-inpaint');
+
+        // 获取滑动条元素
+        const rangeSlider = document.getElementById('brush-slider');
+        const brushValSpan = document.getElementById('brush-val');
+
         const chkLama = document.getElementById('chk-lama');
         const btnRun = document.getElementById('btn-run');
         const btnUndo = document.getElementById('btn-undo');
         const btnClose = document.getElementById('btn-close');
 
         chkLama.onchange = (e) => { useLama = e.target.checked; };
+
+        // 监听滑动条变化
+        rangeSlider.oninput = (e) => {
+            currentBrushSize = parseInt(e.target.value);
+            brushValSpan.innerText = currentBrushSize;
+        };
 
         function updateModeUI() {
             [btnFg, btnBg, btnInpaint].forEach(btn => {
@@ -431,6 +458,7 @@
                     type: 'inpaint',
                     shape: 'rect',
                     points: [rectStart, rectCurrent]
+                    // rect 不需要 width
                 });
                 rectStart = null; rectCurrent = null;
                 redrawCanvas();
@@ -452,7 +480,13 @@
         function addPoint(e) {
             const pos = getMousePos(e);
             if (!currentStroke) {
-                currentStroke = { type: drawMode, shape: 'line', points: [] };
+                // 修改了这里：创建笔画时记录当前宽度
+                currentStroke = {
+                    type: drawMode,
+                    shape: 'line',
+                    points: [],
+                    width: currentBrushSize
+                };
                 strokes.push(currentStroke);
             }
             currentStroke.points.push(pos);
@@ -475,10 +509,14 @@
                 if (s.shape === 'rect') {
                     const w = s.points[1][0] - s.points[0][0];
                     const h = s.points[1][1] - s.points[0][1];
+                    ctx.lineWidth = 2; // 矩形框保持细线
                     ctx.fillRect(s.points[0][0], s.points[0][1], w, h);
                     ctx.strokeRect(s.points[0][0], s.points[0][1], w, h);
                 } else {
-                    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = 15;
+                    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+                    // 修改了这里：读取笔画保存的宽度，如果没有则默认15
+                    ctx.lineWidth = s.width || 15;
+
                     if (s.points.length > 0) {
                         ctx.moveTo(s.points[0][0], s.points[0][1]);
                         if (s.points.length === 1) ctx.lineTo(s.points[0][0], s.points[0][1]);
