@@ -33,7 +33,7 @@ class AdvancedGrabCutProcessor:
         k_size = max(3, min(k_size, 11))
         
         # 执行形态学扩张
-        # 使用动态计算出的 k_size
+        # 使用动态计算出的k_size
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
         mask_dilated = cv2.dilate(mask_uint8, kernel, iterations=1)
         
@@ -43,7 +43,7 @@ class AdvancedGrabCutProcessor:
         mask_float = mask_dilated.astype(np.float32) / 255.0
         mask_blurred = cv2.GaussianBlur(mask_float, (blur_size, blur_size), 0)
         
-        # 锐化重塑
+        # 锐化重塑``
         mask_refined = (mask_blurred - 0.5) * 2.0 + 0.5
         mask_refined = np.clip(mask_refined, 0, 1)
         
@@ -120,3 +120,4 @@ class AdvancedGrabCutProcessor:
         alpha_channel = self.preserve_anime_outlines(mask_result)
         
         return alpha_channel
+    
